@@ -110,6 +110,7 @@ type storageDownloadTask struct {
 	//res
 	localFilename string
 	buffer        []byte
+	wstream		  writer
 }
 
 func (this *storageDownloadTask) SendReq(conn net.Conn) error {
@@ -147,6 +148,11 @@ func (this *storageDownloadTask) RecvRes(conn net.Conn) error {
 	if this.localFilename != "" {
 		if err := this.recvFile(conn); err != nil {
 			return fmt.Errorf("StorageDownloadTask RecvRes %v", err)
+		}
+	}else if this.wstream != nil{
+		err := writeFromConn(conn, this.wstream, this.pkgLen)
+		if err != nil{
+			return errors.New("StorageDownloadTask RecvRes " + err.Error())
 		}
 	} else {
 		if err := this.recvBuffer(conn); err != nil {

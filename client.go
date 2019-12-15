@@ -147,6 +147,27 @@ func (this *Client) DownloadToFile(fileId string, localFilename string, offset i
 	return this.doStorage(task, storageInfo)
 }
 
+func (this *Client) DownloadToOtherStream(fileId string, offset int64, downloadBytes int64, w writer)(error){
+	groupName, remoteFilename, err := splitFileId(fileId)
+	if err != nil{
+		return err
+	}
+	storageInfo, err := this.queryStorageInfoWithTracker(TRACKER_PROTO_CMD_SERVICE_QUERY_FETCH_ONE, groupName, remoteFilename)
+	if err != nil{
+		return err
+	}
+
+	task := &storageDownloadTask{}
+
+	task.groupName = groupName
+	task.remoteFilename = remoteFilename
+	task.offset = offset
+	task.downloadBytes = downloadBytes
+
+	task.wstream = w
+	return this.doStorage(task, storageInfo)
+}
+
 //deprecated
 func (this *Client) DownloadToBuffer(fileId string, offset int64, downloadBytes int64) ([]byte, error) {
 	groupName, remoteFilename, err := splitFileId(fileId)
@@ -171,6 +192,8 @@ func (this *Client) DownloadToBuffer(fileId string, offset int64, downloadBytes 
 	}
 	return task.buffer, nil
 }
+
+
 
 func (this *Client) DownloadToAllocatedBuffer(fileId string, buffer []byte,offset int64, downloadBytes int64) (error) {
 	groupName, remoteFilename, err := splitFileId(fileId)

@@ -35,6 +35,7 @@ import (
 
 type Appender interface {
 	AppendByStream(s io.Reader, total int64) error
+	AppendByFileName(fileName string) error
 	Clear() error
 	Complete() (string, error)
 }
@@ -42,48 +43,67 @@ type Appender interface {
 type appender struct {
 	//fileName	string
 	//groupName 	string
-	fileId string
-	storageAddr	string
-	pathIndex 	int8
-	fileExtName	string
-	fatherC	*Client
+	fileId      string
+	storageAddr string
+	pathIndex   int8
+	fileExtName string
+	fatherC     *Client
 }
 
 func (this *appender) Clear() error {
 	return nil
 }
 
-func (this *appender) Complete() (string, error){
+func (this *appender) Complete() (string, error) {
 	return this.fileId, nil
 }
 
 func (this *appender) AppendByStream(s io.Reader, total int64) error {
-	stream := &streamInfo{stream:s, streamSize:total}
+	stream := &streamInfo{stream: s, streamSize: total}
+	fileinfo, err := newFileInfo("", nil, stream, this.fileExtName)
+	if err != nil {
+		return err
+	}
+	defer fileinfo.Close()
 
-
-	var err error
 	if this.storageAddr == "" {
-		err = this.appenderInit(stream)
-	} else{
-		err = this.append(stream)
+		err = this.appenderInit(fileinfo)
+	} else {
+		err = this.append(fileinfo)
 	}
 
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (this *appender) appenderInit(s *streamInfo) error{
-	fileInfo, err := newFileInfo("", nil, s, this.fileExtName)
-	if err != nil{
+func (this *appender) AppendByFileName(fileName string) error {
+
+	fileinfo, err := newFileInfo(fileName, nil, nil, this.fileExtName)
+	if err != nil {
 		return err
 	}
-	defer fileInfo.Close()
+	defer fileinfo.Close()
 
-	storageInfo, err := this.fatherC.queryStorageInfoWithTracker(TRACKER_PROTO_CMD_SERVICE_QUERY_STORE_WITHOUT_GROUP_ONE, "", "" )
-	if err != nil{
+	if this.storageAddr == "" {
+		err = this.appenderInit(fileinfo)
+	} else {
+		err = this.append(fileinfo)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (this *appender) appenderInit(f *fileInfo) error {
+
+	storageInfo, err := this.fatherC.queryStorageInfoWithTracker(TRACKER_PROTO_CMD_SERVICE_QUERY_STORE_WITHOUT_GROUP_ONE, "", "")
+	if err != nil {
 		return err
 	}
 	this.storageAddr = storageInfo.addr
@@ -91,10 +111,10 @@ func (this *appender) appenderInit(s *streamInfo) error{
 
 	task := &storageAppenderInitTask{}
 	task.appender = this
-	task.fileInfo = fileInfo
+	task.fileInfo = f
 
 	err = this.doStorage(task)
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
@@ -102,51 +122,44 @@ func (this *appender) appenderInit(s *streamInfo) error{
 	return nil
 }
 
-func (this *appender) append(s *streamInfo) error{
-	fileInfo, err := newFileInfo("", nil, s, this.fileExtName)
-	if err != nil{
-		return err
-	}
-	defer fileInfo.Close()
+func (this *appender) append(f *fileInfo) error {
+
 	task := &storageAppendTask{}
 	task.appender = this
-	task.fileInfo = fileInfo
-	err = this.doStorage(task)
-	if err != nil{
+	task.fileInfo = f
+	err := this.doStorage(task)
+	if err != nil {
 		return err
 	}
 	return nil
 
 }
 
-func (this *appender) doStorage(task task) error{
+func (this *appender) doStorage(task task) error {
 	tempStorageInfo := &storageInfo{
 		addr:             this.storageAddr,
 		storagePathIndex: this.pathIndex,
 	}
 	err := this.fatherC.doStorage(task, tempStorageInfo)
-	if err != nil{
+	if err != nil {
 		return err
 	}
 	return nil
 }
 
-
-
-
 type storageAppenderInitTask struct {
 	header
 	fileInfo *fileInfo
 	appender *appender
-	fileId string
+	fileId   string
 }
 
-func (this *storageAppenderInitTask) SendReq(conn net.Conn) error{
+func (this *storageAppenderInitTask) SendReq(conn net.Conn) error {
 	this.cmd = STORAGE_PROTO_CMD_UPLOAD_APPENDER_FILE
 	this.pkgLen = this.fileInfo.fileSize + 15
 
 	err := this.SendHeader(conn)
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
@@ -154,40 +167,42 @@ func (this *storageAppenderInitTask) SendReq(conn net.Conn) error{
 	buffer := new(bytes.Buffer)
 	buffer.WriteByte(byte(this.appender.pathIndex))
 	err = binary.Write(buffer, binary.BigEndian, this.fileInfo.fileSize)
-	if err != nil{
+	if err != nil {
 		return err
 	}
+
 	fileExtName := []byte(this.appender.fileExtName)
-	if len(fileExtName) < 6{
+	if len(fileExtName) < 6 {
 		extNameExpend := make([]byte, 6-len(fileExtName))
 		fileExtName = append(fileExtName, extNameExpend...)
 	}
 	buffer.Write(fileExtName)
 
 	_, err = conn.Write(buffer.Bytes())
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
-	 // send data
-	if this.fileInfo.file != nil{
+	// send data
+	if this.fileInfo.file != nil {
 		// do something to send file
-	} else if this.fileInfo.buffer != nil{
+		_, err = conn.(pConn).Conn.(*net.TCPConn).ReadFrom(this.fileInfo.file)
+	} else if this.fileInfo.buffer != nil {
 		// do something to send buffer
-	} else{
+	} else {
 		_, err = io.Copy(conn, this.fileInfo.streaminfo.stream)
 	}
 
-	if err != nil{
+	if err != nil {
 		return err
 	}
 	return nil
 
 }
 
-func (this *storageAppenderInitTask) RecvRes(conn net.Conn) error{
+func (this *storageAppenderInitTask) RecvRes(conn net.Conn) error {
 	err := this.RecvHeader(conn)
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
@@ -199,19 +214,19 @@ func (this *storageAppenderInitTask) RecvRes(conn net.Conn) error{
 	}
 
 	buf := make([]byte, this.pkgLen)
-	_, err  = conn.Read(buf)
-	if err != nil{
+	_, err = conn.Read(buf)
+	if err != nil {
 		return err
 	}
 
 	buffer := bytes.NewBuffer(buf)
 	groupName, err := readCStrFromByteBuffer(buffer, 16)
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
 	remoteFileName, err := readCStrFromByteBuffer(buffer, int(this.pkgLen-16))
-	if err != nil{
+	if err != nil {
 		return err
 	}
 	this.fileId = groupName + "/" + remoteFileName
@@ -225,7 +240,7 @@ type storageAppendTask struct {
 	appender *appender
 }
 
-func (this *storageAppendTask) SendReq(conn net.Conn) error{
+func (this *storageAppendTask) SendReq(conn net.Conn) error {
 	//tempStorageInfo := &storageInfo{
 	//	addr:             this.appender.storageAddr,
 	//	storagePathIndex: this.appender.pathIndex,
@@ -236,50 +251,50 @@ func (this *storageAppendTask) SendReq(conn net.Conn) error{
 	this.cmd = STORAGE_PROTO_CMD_APPEND_FILE
 	this.pkgLen = fileNameLen + this.fileInfo.fileSize + 16
 	err := this.SendHeader(conn)
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
 	buffer := new(bytes.Buffer)
 	err = binary.Write(buffer, binary.BigEndian, fileNameLen)
-	if err != nil{
+	if err != nil {
 		return err
 	}
 	err = binary.Write(buffer, binary.BigEndian, this.fileInfo.fileSize)
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
 	_, err = buffer.Write(fileName)
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
 	_, err = conn.Write(buffer.Bytes())
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
-	if this.fileInfo.file != nil{
+	if this.fileInfo.file != nil {
 		// do something to send file
-	} else if this.fileInfo.buffer != nil{
+		_, err = conn.(pConn).Conn.(*net.TCPConn).ReadFrom(this.fileInfo.file)
+	} else if this.fileInfo.buffer != nil {
 		// do something to send buffer
-	} else{
+	} else {
 		_, err = io.Copy(conn, this.fileInfo.streaminfo.stream)
 	}
 
-	if err != nil{
+	if err != nil {
 		return err
 	}
 
 	return nil
 
-
 }
 
-func (this *storageAppendTask) RecvRes(conn net.Conn) error{
+func (this *storageAppendTask) RecvRes(conn net.Conn) error {
 	err := this.RecvHeader(conn)
-	if err != nil{
+	if err != nil {
 		return err
 	}
 	return nil

@@ -31,7 +31,6 @@ const (
 type streamInfo struct {
 	stream		io.Reader
 	streamSize	int64
-	fileName 	string
 }
 
 type storageInfo struct {
@@ -92,7 +91,7 @@ func newFileInfo(fileName string, buffer []byte, streamInfo *streamInfo, fileExt
 
 		return &fileInfo{
 			fileSize:	streamInfo.streamSize,
-			fileExtName: "",
+			fileExtName: fileExtName,
 			streaminfo:  streamInfo,
 		}, nil
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 )
@@ -50,17 +51,20 @@ func (this *storageUploadTask) SendReq(conn net.Conn) error {
 	} else if this.fileInfo.buffer != nil{
 		_, err = conn.Write(this.fileInfo.buffer)
 	} else {
-		sendBytes := make([]byte, 4096)
-		for {
-			n, _ := this.fileInfo.streaminfo.stream.Read(sendBytes)
-			if n < 0{
-				return errors.New("Invalid File")
-			}
-			if n == 0{
-				break
-			}
-			_, err = conn.Write(sendBytes[:n])
-		}
+		_, err = io.Copy(conn, this.fileInfo.streaminfo.stream)
+
+		//sendBytes := make([]byte, 4096)
+		//sendcot := int64(0)
+		//for sendcot < this.fileInfo.streaminfo.streamSize{
+		//	n, _ := this.fileInfo.streaminfo.stream.Read(sendBytes)
+		//	if n < 0{
+		//		return errors.New("Invalid File")
+		//	}
+		//	if n == 0{
+		//		break
+		//	}
+		//	_, err = conn.Write(sendBytes[:n])
+		//}
 	}
 
 	if err != nil {

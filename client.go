@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 )
 
@@ -49,6 +50,22 @@ func (this *Client) Destory() {
 	}
 }
 
+func (this *Client) GetAppender(fileName string) Appender{
+
+	res := new(appender)
+	res.fatherC = this
+	extIndex := strings.LastIndexByte(fileName, '.')
+	if extIndex != -1{
+		extName := fileName[extIndex+1: ]
+		if len(extName) > 6{
+			extName = extName[:6]
+		}
+		res.fileExtName = extName
+	}
+
+	return res
+}
+
 func (this *Client) UploadByFilename(fileName string) (string, error) {
 	fileInfo, err := newFileInfo(fileName, nil, nil, "")
 	defer fileInfo.Close()
@@ -72,11 +89,10 @@ func (this *Client) UploadByFilename(fileName string) (string, error) {
 	return task.fileId, nil
 }
 
-func (this *Client) UploadByStream(s io.Reader, filename string, total int64) (string, error){
+func (this *Client) UploadByStream(s io.Reader, total int64) (string, error){
 	stream := &streamInfo{
 		stream:     s,
 		streamSize: total,
-		fileName:   filename,
 	}
 
 	fileInfo, err := newFileInfo("", nil, stream, "")
@@ -121,6 +137,7 @@ func (this *Client) UploadByBuffer(buffer []byte, fileExtName string) (string, e
 	}
 	return task.fileId, nil
 }
+
 
 func (this *Client) DownloadToFile(fileId string, localFilename string, offset int64, downloadBytes int64) error {
 	groupName, remoteFilename, err := splitFileId(fileId)

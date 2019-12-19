@@ -3,7 +3,9 @@ package fdfs_client
 import (
 	"bufio"
 	"bytes"
+	"crypto/md5"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +20,7 @@ type storageUploadTask struct {
 	storagePathIndex int8
 	//res
 	fileId string
+	fileHash	string
 }
 
 func (this *storageUploadTask) SendReq(conn net.Conn) error {
@@ -51,8 +54,11 @@ func (this *storageUploadTask) SendReq(conn net.Conn) error {
 	} else if this.fileInfo.buffer != nil{
 		_, err = conn.Write(this.fileInfo.buffer)
 	} else {
-		_, err = io.Copy(conn, this.fileInfo.streaminfo.stream)
+		h := md5.New()
+		multiWrite := io.MultiWriter(h, conn)
+		_, err = io.Copy(multiWrite, this.fileInfo.streaminfo.stream)
 
+		this.fileHash = hex.EncodeToString(h.Sum(nil))
 		//sendBytes := make([]byte, 4096)
 		//sendcot := int64(0)
 		//for sendcot < this.fileInfo.streaminfo.streamSize{

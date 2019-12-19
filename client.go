@@ -89,7 +89,7 @@ func (this *Client) UploadByFilename(fileName string) (string, error) {
 	return task.fileId, nil
 }
 
-func (this *Client) UploadByStream(s io.Reader, total int64) (string, error){
+func (this *Client) UploadByStream(s io.Reader, total int64) (string, string, error){
 	stream := &streamInfo{
 		stream:     s,
 		streamSize: total,
@@ -98,21 +98,21 @@ func (this *Client) UploadByStream(s io.Reader, total int64) (string, error){
 	fileInfo, err := newFileInfo("", nil, stream, "")
 	defer fileInfo.Close()
 	if err != nil{
-		return "", err
+		return "", "", err
 	}
 	storageInfo, err := this.queryStorageInfoWithTracker(TRACKER_PROTO_CMD_SERVICE_QUERY_STORE_WITHOUT_GROUP_ONE, "", "")
 
 	if err != nil{
-		return "", err
+		return "", "", err
 	}
 	task := &storageUploadTask{}
 	task.fileInfo = fileInfo
 	task.storagePathIndex = storageInfo.storagePathIndex
 
 	if err := this.doStorage(task, storageInfo); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return task.fileId, nil
+	return task.fileId, task.fileHash, nil
 
 }
 

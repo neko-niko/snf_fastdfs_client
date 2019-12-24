@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	MAXCONNS_LEAST = 5
+	MAXCONNS_LEAST = 1
 )
 
 type pConn struct {
@@ -18,6 +18,24 @@ type pConn struct {
 }
 
 func (c pConn) Close() error {
+	header := &header{
+		cmd: FDFS_PROTO_CMD_ACTIVE_TEST,
+	}
+	err := header.SendHeader(c.Conn)
+	if err != nil{
+		return err
+	}
+	err = header.RecvHeader(c.Conn)
+	if err != nil{
+		return err
+	}
+	//f, _ := c.Conn.(*net.TCPConn).File()
+	//
+	//v, err := syscall.GetsockoptInt(int(f.Fd()), syscall.SOL_SOCKET, syscall.SO_ERROR)
+	//if err != nil{
+	//	fmt.Println("error is: ", err)
+	//}
+	//fmt.Println("socket error is: ", v)
 	return c.pool.put(c)
 }
 

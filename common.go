@@ -5,10 +5,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"mime"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 	"errors"
+	"time"
 )
 
 const (
@@ -60,12 +63,12 @@ func newFileInfo(fileName string, buffer []byte, streamInfo *streamInfo, fileExt
 			return nil, fmt.Errorf("file %q size is zero", fileName)
 		}
 		var fileExtName string
-		index := strings.LastIndexByte(fileName, '.')
-		if index != -1 {
-			fileExtName = fileName[index+1:]
-			if len(fileExtName) > 6 {
-				fileExtName = fileExtName[:6]
-			}
+		fileBytes := make([]byte, 512)
+		n, _ := file.Read(fileBytes)
+		mimeType := http.DetectContentType(fileBytes[:n])
+		slices, _ := mime.ExtensionsByType(mimeType)
+		if slices != nil{
+			fileExtName = slices[0][1:]
 		}
 		return &fileInfo{
 			fileSize:    stat.Size(),
@@ -135,6 +138,8 @@ func (this *header) SendHeader(conn net.Conn) error {
 
 func (this *header) RecvHeader(conn net.Conn) error {
 	buf := make([]byte, 10)
+
+	_ = conn.SetReadDeadline(time.Now().Add(5*time.Second))
 	if _, err := conn.Read(buf); err != nil {
 		return err
 	}

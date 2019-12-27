@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
+	"net/http"
 	"os"
 )
 
@@ -19,8 +21,9 @@ type storageUploadTask struct {
 	fileInfo         *fileInfo
 	storagePathIndex int8
 	//res
-	fileId string
+	fileId 		string
 	fileHash	string
+	mimeType	string
 }
 
 func (this *storageUploadTask) SendReq(conn net.Conn) error {
@@ -36,7 +39,7 @@ func (this *storageUploadTask) SendReq(conn net.Conn) error {
 		return err
 	}
 
-	byteFileExtName := []byte(this.fileInfo.fileExtName)
+	byteFileExtName := []byte(this.fileInfo.fileExtName)	// 文件类型不一定准确
 	var bufferFileExtName [6]byte
 	for i := 0; i < len(byteFileExtName); i++ {
 		bufferFileExtName[i] = byteFileExtName[i]
@@ -50,27 +53,23 @@ func (this *storageUploadTask) SendReq(conn net.Conn) error {
 	var err error
 	//send file
 	if this.fileInfo.file != nil {
+		this.mimeType = mime.TypeByExtension("."+this.fileInfo.fileExtName)
 		_, err = conn.(pConn).Conn.(*net.TCPConn).ReadFrom(this.fileInfo.file)
 	} else if this.fileInfo.buffer != nil{
+		this.mimeType = http.DetectContentType(this.fileInfo.buffer)
 		_, err = conn.Write(this.fileInfo.buffer)
 	} else {
 		h := md5.New()
+		typeBytes := make([]byte, 512)
+		n, _ := this.fileInfo.streaminfo.stream.Read(typeBytes)
+		this.mimeType = http.DetectContentType(typeBytes[:n])
+
+		h.Write(typeBytes[:n])
+		_, _ = conn.Write(typeBytes[:n])
 		multiWrite := io.MultiWriter(h, conn)
 		_, err = io.Copy(multiWrite, this.fileInfo.streaminfo.stream)
 
 		this.fileHash = hex.EncodeToString(h.Sum(nil))
-		//sendBytes := make([]byte, 4096)
-		//sendcot := int64(0)
-		//for sendcot < this.fileInfo.streaminfo.streamSize{
-		//	n, _ := this.fileInfo.streaminfo.stream.Read(sendBytes)
-		//	if n < 0{
-		//		return errors.New("Invalid File")
-		//	}
-		//	if n == 0{
-		//		break
-		//	}
-		//	_, err = conn.Write(sendBytes[:n])
-		//}
 	}
 
 	if err != nil {

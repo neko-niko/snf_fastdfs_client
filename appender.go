@@ -5,39 +5,18 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"mime"
 	"net"
+	"net/http"
 	"strings"
 )
 
-//var appenderMap  map[string]Appender
-
-//func gcErrorProcess(err error){
-//	fmt.Println(err)
-//}
-//
-//func appenderClear(timeoutChan <-chan string) {
-//	for {
-//	select {
-//	case timeoutId := <-timeoutChan:
-//		if timeoutId == "" {
-//			return
-//		}
-//		timeoutAppender := appenderMap[timeoutId]
-//		err := timeoutAppender.Clear()
-//		if err != nil {
-//			gcErrorProcess(err)
-//		}
-//		delete(appenderMap, timeoutId)
-//
-//	}
-//	}
-//}
 
 type Appender interface {
 	AppendByStream(s io.Reader, total int64) error
 	AppendByFileName(fileName string) error
 	Clear() error
-	Complete() (string, error)
+	Complete() (string, string,error)
 }
 
 type appender struct {
@@ -47,6 +26,7 @@ type appender struct {
 	storageAddr string
 	pathIndex   int8
 	fileExtName string
+	mimeType	string
 	fatherC     *Client
 }
 
@@ -54,8 +34,8 @@ func (this *appender) Clear() error {
 	return nil
 }
 
-func (this *appender) Complete() (string, error) {
-	return this.fileId, nil
+func (this *appender) Complete() (string, string, error) {
+	return this.fileId, this.mimeType, nil
 }
 
 func (this *appender) AppendByStream(s io.Reader, total int64) error {
@@ -171,7 +151,7 @@ func (this *storageAppenderInitTask) SendReq(conn net.Conn) error {
 		return err
 	}
 
-	fileExtName := []byte(this.appender.fileExtName)
+	fileExtName := []byte(this.appender.fileExtName)	// 此文件类型由文件名拆分得到, 不一定准确
 	if len(fileExtName) < 6 {
 		extNameExpend := make([]byte, 6-len(fileExtName))
 		fileExtName = append(fileExtName, extNameExpend...)
@@ -186,10 +166,21 @@ func (this *storageAppenderInitTask) SendReq(conn net.Conn) error {
 	// send data
 	if this.fileInfo.file != nil {
 		// do something to send file
+		this.appender.fileExtName = this.fileInfo.fileExtName
 		_, err = conn.(pConn).Conn.(*net.TCPConn).ReadFrom(this.fileInfo.file)
 	} else if this.fileInfo.buffer != nil {
 		// do something to send buffer
 	} else {
+		var extName string
+		typeBytes := make([]byte, 512)
+		n, _ := this.fileInfo.streaminfo.stream.Read(typeBytes)
+		this.appender.mimeType = http.DetectContentType(typeBytes[:n])
+		slices, _ := mime.ExtensionsByType(this.appender.mimeType)
+		if slices != nil {
+			extName = slices[0][1:]
+		}
+		this.appender.fileExtName = extName		// 获得准确的文件名
+		_, err = conn.Write(typeBytes[:n])
 		_, err = io.Copy(conn, this.fileInfo.streaminfo.stream)
 	}
 

@@ -3,6 +3,7 @@ package fdfs_client
 import (
 	"container/list"
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -17,7 +18,10 @@ type pConn struct {
 	pool *connPool
 }
 
+
+
 func (c pConn) Close() error {
+	log.Println("call close")
 	header := &header{
 		cmd: FDFS_PROTO_CMD_ACTIVE_TEST,
 	}
@@ -29,13 +33,7 @@ func (c pConn) Close() error {
 	if err != nil{
 		return err
 	}
-	//f, _ := c.Conn.(*net.TCPConn).File()
-	//
-	//v, err := syscall.GetsockoptInt(int(f.Fd()), syscall.SOL_SOCKET, syscall.SO_ERROR)
-	//if err != nil{
-	//	fmt.Println("error is: ", err)
-	//}
-	//fmt.Println("socket error is: ", v)
+
 	return c.pool.put(c)
 }
 

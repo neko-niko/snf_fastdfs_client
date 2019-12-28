@@ -89,7 +89,7 @@ func (this *Client) UploadByFilename(fileName string) (string, error) {
 	return task.fileId, nil
 }
 
-func (this *Client) UploadByStream(s io.Reader, total int64) (string, string, error){
+func (this *Client) UploadByStream(s io.Reader, total int64) (string, error){
 	stream := &streamInfo{
 		stream:     s,
 		streamSize: total,
@@ -98,21 +98,21 @@ func (this *Client) UploadByStream(s io.Reader, total int64) (string, string, er
 	fileInfo, err := newFileInfo("", nil, stream, "")
 	defer fileInfo.Close()
 	if err != nil{
-		return "", "", err
+		return "", err
 	}
 	storageInfo, err := this.queryStorageInfoWithTracker(TRACKER_PROTO_CMD_SERVICE_QUERY_STORE_WITHOUT_GROUP_ONE, "", "")
 
 	if err != nil{
-		return "", "", err
+		return "", err
 	}
 	task := &storageUploadTask{}
 	task.fileInfo = fileInfo
 	task.storagePathIndex = storageInfo.storagePathIndex
 
 	if err := this.doStorage(task, storageInfo); err != nil {
-		return "", "", err
+		return "", err
 	}
-	return task.fileId, task.fileHash, nil
+	return task.fileId, nil
 
 }
 
@@ -254,6 +254,69 @@ func (this *Client) DeleteFile(fileId string) error {
 
 	return this.doStorage(task, storageInfo)
 }
+
+func (this *Client) InterceptDownload(fileId string, offset, downloadBytes int64) (*ExposeDownloadConn, error){
+	groupName, fileName, err := splitFileId(fileId)
+	if err != nil{
+		return nil, err
+	}
+
+	storageInfo, err := this.queryStorageInfoWithTracker(TRACKER_PROTO_CMD_SERVICE_QUERY_FETCH_ONE, groupName, fileName)
+	if err != nil{
+		return nil, err
+	}
+
+	task := new(storageDownloadTask)
+	task.groupName = groupName
+	task.remoteFilename = fileName
+	task.offset = offset
+	task.downloadBytes = downloadBytes
+	conn, err := this.getStorageConn(storageInfo)
+	if err != nil{
+		return nil, err
+	}
+
+	exposeDownload := new(ExposeDownloadConn)
+	exposeDownload.task = task
+	exposeDownload.conn = conn.(pConn)
+	exposeDownload.preparationFlag = false
+	exposeDownload.completeFlag = false
+
+	return exposeDownload, nil
+}
+
+
+func (this *Client) InterceptUpload(fileExtName string, size int64) (*ExposeUploadConn, error){
+
+	fileInfo := new(fileInfo)
+	fileInfo.fileSize = size
+	fileInfo.fileExtName = fileExtName
+
+
+	storageInfo, err := this.queryStorageInfoWithTracker(TRACKER_PROTO_CMD_SERVICE_QUERY_STORE_WITHOUT_GROUP_ONE, "", "")
+	if err != nil{
+		return nil, err
+	}
+
+	task := new(storageUploadTask)
+	task.storagePathIndex = storageInfo.storagePathIndex
+	task.fileInfo = fileInfo
+
+	conn, err := this.getStorageConn(storageInfo)
+	if err != nil{
+		return nil, err
+	}
+
+	exposeUpload := new(ExposeUploadConn)
+	exposeUpload.task = task
+	exposeUpload.conn = conn.(pConn)
+	exposeUpload.totalSize = fileInfo.fileSize
+	exposeUpload.curSize = 0
+	exposeUpload.completeFlag = false
+	exposeUpload.preparationFlag = false
+	return exposeUpload, nil
+}
+
 
 func (this *Client) doTracker(task task) error {
 	trackerConn, err := this.getTrackerConn()

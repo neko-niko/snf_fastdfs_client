@@ -9,29 +9,7 @@ import (
 	"strings"
 )
 
-//var appenderMap  map[string]Appender
 
-//func gcErrorProcess(err error){
-//	fmt.Println(err)
-//}
-//
-//func appenderClear(timeoutChan <-chan string) {
-//	for {
-//	select {
-//	case timeoutId := <-timeoutChan:
-//		if timeoutId == "" {
-//			return
-//		}
-//		timeoutAppender := appenderMap[timeoutId]
-//		err := timeoutAppender.Clear()
-//		if err != nil {
-//			gcErrorProcess(err)
-//		}
-//		delete(appenderMap, timeoutId)
-//
-//	}
-//	}
-//}
 
 type Appender interface {
 	AppendByStream(s io.Reader, total int64) error
